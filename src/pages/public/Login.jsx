@@ -3,28 +3,77 @@ import PublicLayout from "../../Layouts/PublicLayout";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
+import axios from "axios";
 
-// Define the validation schema
-const schema = z.object({
-  name: z
-    .string()
-    .min(1, { message: "Required" })
-    .refine((name) => name.toLowerCase() !== "justin", {
-      message: "Name cannot be 'Justin'",
-    }),
-  password: z.string().min(1, { message: "Required" }),
-  captcha: z.string().min(1, { message: "Required" }),
-});
+const checkUserExists = async (name) => {
+  try {
+    const response = await fetch(`http://localhost:8080/court/api/${name}`);
+    if (!response.ok) {
+      return false; // User not found
+    }
+    return true; // User exists
+  } catch (error) {
+    // Log the error for debugging purposes (optional)
+    console.error("Error checking user:", error.message);
+    return false; // Consider this as a failed validation
+  }
+};
 
 const Login = () => {
+  const [captcha, setCaptcha] = useState(generateCaptcha());
+  const canvasRef = useRef(null);
+
+  // Define the validation schema
+  const schema = z.object({
+    username: z
+      .string()
+      .min(1, { message: "Required" })
+      .refine((name) => name.toLowerCase() !== "justin", {
+        message: "Name cannot be 'Justin'",
+      })
+      .refine(
+        async (name) => {
+          try {
+            const response = await fetch(
+              `http://localhost:8080/court/api/${name}`
+            );
+            if (!response.ok) {
+              return false; // User not found
+            }
+            return true; // User exists
+          } catch (error) {
+            // Log the error for debugging purposes (optional)
+            console.error("Error checking user:", error.message);
+            return false; // Consider this as a failed validation
+          }
+        },
+        {
+          message: "User not found", // Error message if user does not exist
+        }
+      ),
+    password: z.string().min(1, { message: "Required" }),
+    captcha: z
+      .string()
+      .min(1, { message: "Required" })
+      .refine(
+        (captchaa) => {
+          if (captchaa === captcha) {
+            return true;
+          } else {
+            return false;
+          }
+        },
+        {
+          message: "incorrect captcha",
+        }
+      ),
+  });
+
   const {
     register,
     handleSubmit,
     formState: { errors },
   } = useForm({ resolver: zodResolver(schema) });
-
-  const [captcha, setCaptcha] = useState(generateCaptcha());
-  const canvasRef = useRef(null);
 
   function generateCaptcha() {
     const chars =
@@ -52,21 +101,26 @@ const Login = () => {
     setCaptcha(generateCaptcha());
   };
 
-  const onSubmit = (data) => {
-    if (data.captcha === captcha) {
-      console.log("Login successful", data);
-    } else {
-      console.log("Incorrect CAPTCHA");
+  const onSubmit = async (data) => {
+    try {
+      const response = await axios.post(
+        "http://localhost:8080/court/login",
+        data,
+        {
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      console.log("Login successful:", response.data);
+      // Handle successful login (e.g., redirect, store token, etc.)
+    } catch (error) {
+      console.error("Error during login:", error);
+      // Handle error (e.g., show an error message to the user)
     }
   };
-  // Custom asynchronous validation function for name
-  const checkUserExists = async (name) => {
-    const response = await fetch(`https://your-api-url.com/users/${name}`);
-    if (!response.ok) {
-      throw new Error("User not found");
-    }
-    return true; // User exists
-  };
+
   return (
     <PublicLayout>
       <div
@@ -91,7 +145,7 @@ const Login = () => {
               type="text"
               className={`form-control ${errors.name ? "is-invalid" : ""}`}
               id="username"
-              {...register("name", { validate: checkUserExists })}
+              {...register("username")}
             />
             {errors.name && (
               <p className="text-danger">{errors.name.message}</p>
